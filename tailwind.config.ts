@@ -27,6 +27,13 @@ export default {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",
         },
+        telegram: {
+          blue: "hsl(var(--telegram-blue))",
+          "light-blue": "hsl(var(--telegram-light-blue))",
+          success: "hsl(var(--telegram-success))",
+          warning: "hsl(var(--telegram-warning))",
+          error: "hsl(var(--telegram-error))",
+        },
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
@@ -62,6 +69,20 @@ export default {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        telegram: "var(--border-radius-telegram)",
+      },
+      backgroundImage: {
+        "gradient-telegram": "var(--gradient-telegram)",
+        "gradient-success": "var(--gradient-success)",
+        "gradient-subtle": "var(--gradient-subtle)",
+      },
+      boxShadow: {
+        telegram: "var(--shadow-telegram)",
+        "card-soft": "var(--shadow-card)",
+        elevated: "var(--shadow-elevated)",
+      },
+      transitionTimingFunction: {
+        smooth: "var(--transition-smooth)",
       },
       keyframes: {
         "accordion-down": {
