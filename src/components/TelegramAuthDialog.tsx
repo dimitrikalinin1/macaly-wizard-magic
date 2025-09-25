@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Loader2, 
@@ -232,9 +232,12 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
                   <p className="text-sm text-muted-foreground">API ID: {account?.api_id}</p>
                 </div>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground mb-3">
                 Мы отправим SMS код для авторизации этого аккаунта в Telegram
               </p>
+              <div className="p-2 bg-background rounded border text-xs text-muted-foreground">
+                ⚠️ <strong>ДЕМО-режим:</strong> Реальные SMS не отправляются. Используйте код <code className="bg-muted px-1 rounded">12345</code> на следующем шаге.
+              </div>
             </div>
             
             <div className="flex justify-end space-x-3">
@@ -264,9 +267,12 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
           <div className="space-y-4">
             <div className="p-4 rounded-telegram bg-telegram-warning/5 border border-telegram-warning/20">
               <MessageSquare className="h-5 w-5 text-telegram-warning mb-2" />
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground mb-2">
                 SMS код отправлен на номер {account?.phone_number}. Введите полученный код:
               </p>
+              <div className="p-2 bg-background rounded border text-xs text-muted-foreground">
+                📱 <strong>ДЕМО-режим:</strong> Используйте код <code className="bg-muted px-1 rounded">12345</code> для тестирования
+              </div>
             </div>
             
             <div>
@@ -286,6 +292,17 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
             <div className="flex justify-end space-x-3">
               <Button variant="outline" onClick={handleClose} disabled={loading}>
                 Отмена
+              </Button>
+              <Button 
+                onClick={() => {
+                  setPhoneCode('12345');
+                  setTimeout(handleVerifyCode, 100);
+                }}
+                variant="outline"
+                disabled={loading}
+                className="text-telegram-blue hover:text-telegram-blue"
+              >
+                Использовать демо-код
               </Button>
               <Button 
                 onClick={handleVerifyCode} 
@@ -310,9 +327,12 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
           <div className="space-y-4">
             <div className="p-4 rounded-telegram bg-telegram-error/5 border border-telegram-error/20">
               <Shield className="h-5 w-5 text-telegram-error mb-2" />
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground mb-2">
                 Для завершения авторизации введите пароль двухфакторной аутентификации:
               </p>
+              <div className="p-2 bg-background rounded border text-xs text-muted-foreground">
+                🔐 <strong>ДЕМО-режим:</strong> Используйте пароль <code className="bg-muted px-1 rounded">demo2fa</code> для тестирования
+              </div>
             </div>
             
             <div>
@@ -330,6 +350,17 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
             <div className="flex justify-end space-x-3">
               <Button variant="outline" onClick={handleClose} disabled={loading}>
                 Отмена
+              </Button>
+              <Button 
+                onClick={() => {
+                  setTwoFactorPassword('demo2fa');
+                  setTimeout(handleVerify2FA, 100);
+                }}
+                variant="outline"
+                disabled={loading}
+                className="text-telegram-blue hover:text-telegram-blue"
+              >
+                Использовать демо-пароль
               </Button>
               <Button 
                 onClick={handleVerify2FA} 
@@ -398,6 +429,12 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
             {getStepIcon()}
             <span>{getStepTitle()}</span>
           </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            {step === 'send_code' && 'Настройка подключения к Telegram аккаунту'}
+            {step === 'verify_code' && 'Введите код подтверждения из SMS'}
+            {step === 'verify_2fa' && 'Введите пароль двухфакторной аутентификации'}
+            {step === 'completed' && 'Процесс авторизации успешно завершен'}
+          </DialogDescription>
         </DialogHeader>
         
         {renderStepContent()}
