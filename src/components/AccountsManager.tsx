@@ -26,12 +26,15 @@ import {
   MessageSquare
 } from "lucide-react";
 import { useTelegramAccounts } from "@/hooks/useTelegramAccounts";
+import TelegramAuthDialog from "./TelegramAuthDialog";
 
 const AccountsManager = () => {
-  const { accounts, loading, addAccount, updateAccountStatus, deleteAccount } = useTelegramAccounts();
+  const { accounts, loading, addAccount, updateAccountStatus, deleteAccount, refetch } = useTelegramAccounts();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
+  const [authAccount, setAuthAccount] = useState<any>(null);
   const [newAccount, setNewAccount] = useState({
     phoneNumber: "",
     apiId: "",
@@ -157,6 +160,17 @@ const AccountsManager = () => {
         variant: "destructive",
       });
     }
+  };
+
+  const handleAuthAccount = (account: any) => {
+    setAuthAccount(account);
+    setShowAuthDialog(true);
+  };
+
+  const handleAuthSuccess = () => {
+    refetch();
+    setShowAuthDialog(false);
+    setAuthAccount(null);
   };
 
   const formatDate = (dateString: string) => {
@@ -400,6 +414,17 @@ const AccountsManager = () => {
                       </span>
                     </div>
                     
+                    {account.status === 'waiting' && account.api_id && account.api_hash && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleAuthAccount(account)}
+                        className="text-telegram-blue hover:text-telegram-blue border-telegram-blue/20"
+                      >
+                        Авторизовать
+                      </Button>
+                    )}
+                    
                     <Select onValueChange={(value) => handleStatusChange(account.id, value as any)}>
                       <SelectTrigger className="w-32">
                         <SelectValue placeholder="Статус" />
@@ -430,6 +455,14 @@ const AccountsManager = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Telegram Auth Dialog */}
+      <TelegramAuthDialog
+        isOpen={showAuthDialog}
+        onClose={() => setShowAuthDialog(false)}
+        account={authAccount}
+        onSuccess={handleAuthSuccess}
+      />
     </div>
   );
 };
