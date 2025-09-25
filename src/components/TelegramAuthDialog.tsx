@@ -101,8 +101,17 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
     setLoading(true);
     try {
       const result = await callTelegramAuth('verify_code', { phoneCode });
+
+      if (result?.error === 'FLOOD_WAIT') {
+        toast({
+          title: 'Слишком много попыток',
+          description: result.message || 'Подождите и попробуйте снова.',
+          variant: 'destructive',
+        });
+        return;
+      }
       
-      if (result.success) {
+      if (result?.success) {
         if (result.nextStep === 'verify_2fa') {
           setStep('verify_2fa');
         } else if (result.nextStep === 'completed') {
@@ -111,11 +120,11 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
         }
         
         toast({
-          title: "Успех!",
+          title: 'Успех!',
           description: result.message,
         });
       } else {
-        throw new Error(result.error || 'Ошибка проверки кода');
+        throw new Error(result?.error || 'Ошибка проверки кода');
       }
     } catch (error: any) {
       toast({
@@ -141,16 +150,25 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
     setLoading(true);
     try {
       const result = await callTelegramAuth('verify_2fa', { twoFactorPassword });
+
+      if (result?.error === 'FLOOD_WAIT') {
+        toast({
+          title: 'Слишком много попыток',
+          description: result.message || 'Подождите и попробуйте снова.',
+          variant: 'destructive',
+        });
+        return;
+      }
       
-      if (result.success) {
+      if (result?.success) {
         setStep('completed');
         onSuccess();
         toast({
-          title: "Успех!",
+          title: 'Успех!',
           description: result.message,
         });
       } else {
-        throw new Error(result.error || 'Ошибка проверки 2FA');
+        throw new Error(result?.error || 'Ошибка проверки 2FA');
       }
     } catch (error: any) {
       toast({

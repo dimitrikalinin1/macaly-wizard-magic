@@ -66,7 +66,7 @@ serve(async (req) => {
         );
     }
 
-    const status = result.error ? 400 : 200;
+    const status = result && result.error && result.error !== 'FLOOD_WAIT' ? 400 : 200;
     return new Response(
       JSON.stringify(result),
       { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -214,6 +214,17 @@ async function verifyCode(account: any, phoneCode: string) {
           nextStep: 'verify_2fa'
         };
       }
+
+      // Обрабатываем ограничение FLOOD_WAIT как ожидаемую ситуацию (200 OK)
+      const flood = /FLOOD_WAIT_(\d+)/.exec(errorMessage);
+      if (flood) {
+        const waitSeconds = parseInt(flood[1], 10);
+        return {
+          error: 'FLOOD_WAIT',
+          waitSeconds,
+          message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
+        };
+      }
       
       throw authError;
     }
@@ -304,6 +315,17 @@ async function verify2FA(account: any, twoFactorPassword: string) {
       if (errorMessage.includes('password') || errorMessage.includes('invalid')) {
         return {
           error: 'Неверный пароль двухфакторной аутентификации'
+        };
+      }
+
+      // Обрабатываем ограничение FLOOD_WAIT как ожидаемую ситуацию (200 OK)
+      const flood = /FLOOD_WAIT_(\d+)/.exec(errorMessage);
+      if (flood) {
+        const waitSeconds = parseInt(flood[1], 10);
+        return {
+          error: 'FLOOD_WAIT',
+          waitSeconds,
+          message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
         };
       }
       
