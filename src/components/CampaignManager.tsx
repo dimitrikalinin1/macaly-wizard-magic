@@ -20,59 +20,15 @@ import {
   CheckCircle,
   AlertCircle,
   BarChart3,
-  Send
+  Send,
+  Loader2
 } from "lucide-react";
-
-interface Campaign {
-  id: number;
-  name: string;
-  message: string;
-  contactListName: string;
-  totalTargets: number;
-  sent: number;
-  delivered: number;
-  status: "draft" | "running" | "paused" | "completed" | "stopped";
-  createdAt: string;
-  scheduledFor?: string;
-}
+import { useCampaigns } from "@/hooks/useCampaigns";
+import { useContactLists } from "@/hooks/useContactLists";
 
 const CampaignManager = () => {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([
-    {
-      id: 1,
-      name: "Весенняя акция",
-      message: "🌸 Весенняя распродажа! Скидки до 50% на все товары. Не упустите возможность!",
-      contactListName: "Потенциальные клиенты",
-      totalTargets: 892,
-      sent: 245,
-      delivered: 238,
-      status: "running",
-      createdAt: "2024-01-20",
-    },
-    {
-      id: 2,
-      name: "VIP предложение",
-      message: "💎 Эксклюзивное предложение только для VIP клиентов. Персональная скидка 30%!",
-      contactListName: "VIP клиенты",
-      totalTargets: 256,
-      sent: 256,
-      delivered: 251,
-      status: "completed",
-      createdAt: "2024-01-18",
-    },
-    {
-      id: 3,
-      name: "Новогодние поздравления",
-      message: "🎄 С наступающим Новым годом! Желаем счастья, здоровья и процветания!",
-      contactListName: "Все клиенты",
-      totalTargets: 1580,
-      sent: 0,
-      delivered: 0,
-      status: "draft",
-      createdAt: "2024-01-15",
-    },
-  ]);
-
+  const { campaigns, loading, createCampaign, updateCampaignStatus, deleteCampaign } = useCampaigns();
+  const { contactLists } = useContactLists();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newCampaign, setNewCampaign] = useState({
     name: "",
@@ -116,7 +72,7 @@ const CampaignManager = () => {
     }
   };
 
-  const handleCreateCampaign = () => {
+  const handleCreateCampaign = async () => {
     if (!newCampaign.name || !newCampaign.message || !newCampaign.contactList) {
       toast({
         title: "Ошибка",
@@ -126,50 +82,67 @@ const CampaignManager = () => {
       return;
     }
 
-    const campaign: Campaign = {
-      id: Date.now(),
-      name: newCampaign.name,
-      message: newCampaign.message,
-      contactListName: newCampaign.contactList,
-      totalTargets: Math.floor(Math.random() * 1000) + 100,
-      sent: 0,
-      delivered: 0,
-      status: "draft",
-      createdAt: new Date().toISOString().split('T')[0],
-      scheduledFor: newCampaign.schedule || undefined,
+    const { error } = await createCampaign(
+      newCampaign.name,
+      newCampaign.message,
+      newCampaign.contactList,
+      newCampaign.schedule
+    );
+
+    if (error) {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось создать кампанию",
+        variant: "destructive",
+      });
+    } else {
+      setNewCampaign({ name: "", message: "", contactList: "", schedule: "" });
+      setShowCreateForm(false);
+      toast({
+        title: "Успех!",
+        description: "Кампания создана и сохранена как черновик",
+      });
+    }
+  };
+
+  const controlCampaign = async (id: string, action: "start" | "pause" | "stop") => {
+    const statusMap = {
+      start: "running" as const,
+      pause: "paused" as const,
+      stop: "stopped" as const
     };
 
-    setCampaigns([campaign, ...campaigns]);
-    setNewCampaign({ name: "", message: "", contactList: "", schedule: "" });
-    setShowCreateForm(false);
-
-    toast({
-      title: "Успех!",
-      description: "Кампания создана и сохранена как черновик",
-    });
+    const { error } = await updateCampaignStatus(id, statusMap[action]);
+    
+    if (error) {
+      toast({
+        title: "Ошибка",
+        description: "Не удалось изменить статус кампании",
+        variant: "destructive",
+      });
+    } else {
+      const actionText = action === "start" ? "запущена" : action === "pause" ? "приостановлена" : "остановлена";
+      toast({
+        title: "Кампания " + actionText,
+        description: `Статус кампании изменен`,
+      });
+    }
   };
 
-  const controlCampaign = (id: number, action: "start" | "pause" | "stop") => {
-    setCampaigns(prev => prev.map(campaign => {
-      if (campaign.id === id) {
-        switch (action) {
-          case "start":
-            return { ...campaign, status: "running" as const };
-          case "pause":
-            return { ...campaign, status: "paused" as const };
-          case "stop":
-            return { ...campaign, status: "stopped" as const };
-        }
-      }
-      return campaign;
-    }));
-
-    const actionText = action === "start" ? "запущена" : action === "pause" ? "приостановлена" : "остановлена";
-    toast({
-      title: "Кампания " + actionText,
-      description: `Статус кампании изменен`,
-    });
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('ru-RU');
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-telegram-blue" />
+          <p className="text-muted-foreground">Загрузка кампаний...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -217,9 +190,11 @@ const CampaignManager = () => {
                       <SelectValue placeholder="Выберите список" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Потенциальные клиенты">Потенциальные клиенты (892 контакта)</SelectItem>
-                      <SelectItem value="VIP клиенты">VIP клиенты (256 контактов)</SelectItem>
-                      <SelectItem value="Новые подписчики">Новые подписчики (734 контакта)</SelectItem>
+                      {contactLists.map((list) => (
+                        <SelectItem key={list.id} value={list.id}>
+                          {list.name} ({list.telegram_users} контактов)
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -263,114 +238,124 @@ const CampaignManager = () => {
 
       {/* Campaigns List */}
       <div className="space-y-4">
-        {campaigns.map((campaign) => (
-          <Card key={campaign.id} className="bg-card/80 backdrop-blur-sm border-0 shadow-card-soft">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-start space-x-4">
-                  <div className="p-3 bg-telegram-blue/10 rounded-telegram">
-                    {getStatusIcon(campaign.status)}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground">{campaign.name}</h3>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Список: {campaign.contactListName} • Создана {campaign.createdAt}
-                    </p>
-                    <p className="text-sm text-foreground bg-secondary/50 p-2 rounded-md">
-                      {campaign.message}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  {getStatusBadge(campaign.status)}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div className="text-center p-3 rounded-telegram bg-gradient-subtle border border-border/30">
-                  <p className="text-xl font-bold text-foreground">{campaign.totalTargets}</p>
-                  <p className="text-xs text-muted-foreground">Целевых контактов</p>
-                </div>
-                <div className="text-center p-3 rounded-telegram bg-gradient-subtle border border-border/30">
-                  <p className="text-xl font-bold text-telegram-blue">{campaign.sent}</p>
-                  <p className="text-xs text-muted-foreground">Отправлено</p>
-                </div>
-                <div className="text-center p-3 rounded-telegram bg-gradient-subtle border border-border/30">
-                  <p className="text-xl font-bold text-telegram-success">{campaign.delivered}</p>
-                  <p className="text-xs text-muted-foreground">Доставлено</p>
-                </div>
-                <div className="text-center p-3 rounded-telegram bg-gradient-subtle border border-border/30">
-                  <p className="text-xl font-bold text-telegram-warning">
-                    {campaign.totalTargets > 0 ? Math.round((campaign.delivered / campaign.totalTargets) * 100) : 0}%
-                  </p>
-                  <p className="text-xs text-muted-foreground">Конверсия</p>
-                </div>
-              </div>
-
-              {campaign.status === "running" && (
-                <div className="mb-4">
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <span className="text-muted-foreground">Прогресс рассылки</span>
-                    <span className="text-foreground">{Math.round((campaign.sent / campaign.totalTargets) * 100)}%</span>
-                  </div>
-                  <Progress value={(campaign.sent / campaign.totalTargets) * 100} className="h-2" />
-                </div>
-              )}
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                  <div className="flex items-center space-x-1">
-                    <Users className="h-4 w-4" />
-                    <span>{campaign.totalTargets} получателей</span>
-                  </div>
-                  {campaign.scheduledFor && (
-                    <div className="flex items-center space-x-1">
-                      <Clock className="h-4 w-4" />
-                      <span>Запланировано: {new Date(campaign.scheduledFor).toLocaleString()}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center space-x-2">
-                  {campaign.status === "draft" || campaign.status === "paused" ? (
-                    <Button
-                      size="sm"
-                      onClick={() => controlCampaign(campaign.id, "start")}
-                      className="bg-gradient-telegram shadow-telegram"
-                    >
-                      <Play className="h-4 w-4 mr-2" />
-                      {campaign.status === "draft" ? "Запустить" : "Возобновить"}
-                    </Button>
-                  ) : campaign.status === "running" ? (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => controlCampaign(campaign.id, "pause")}
-                      >
-                        <Pause className="h-4 w-4 mr-2" />
-                        Пауза
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => controlCampaign(campaign.id, "stop")}
-                        className="text-telegram-error hover:text-telegram-error"
-                      >
-                        <Square className="h-4 w-4 mr-2" />
-                        Остановить
-                      </Button>
-                    </>
-                  ) : (
-                    <Button variant="outline" size="sm">
-                      <BarChart3 className="h-4 w-4 mr-2" />
-                      Статистика
-                    </Button>
-                  )}
-                </div>
-              </div>
+        {campaigns.length === 0 ? (
+          <Card className="bg-card/80 backdrop-blur-sm border-0 shadow-card-soft">
+            <CardContent className="text-center py-12">
+              <MessageCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">Нет созданных кампаний</p>
+              <p className="text-sm text-muted-foreground mt-2">Создайте свою первую кампанию для начала работы</p>
             </CardContent>
           </Card>
-        ))}
+        ) : (
+          campaigns.map((campaign) => (
+            <Card key={campaign.id} className="bg-card/80 backdrop-blur-sm border-0 shadow-card-soft">
+              <CardContent className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-start space-x-4">
+                    <div className="p-3 bg-telegram-blue/10 rounded-telegram">
+                      {getStatusIcon(campaign.status)}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-foreground">{campaign.name}</h3>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Список: {campaign.contact_list_name} • Создана {formatDate(campaign.created_at)}
+                      </p>
+                      <p className="text-sm text-foreground bg-secondary/50 p-2 rounded-md">
+                        {campaign.message}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {getStatusBadge(campaign.status)}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                  <div className="text-center p-3 rounded-telegram bg-gradient-subtle border border-border/30">
+                    <p className="text-xl font-bold text-foreground">{campaign.total_targets}</p>
+                    <p className="text-xs text-muted-foreground">Целевых контактов</p>
+                  </div>
+                  <div className="text-center p-3 rounded-telegram bg-gradient-subtle border border-border/30">
+                    <p className="text-xl font-bold text-telegram-blue">{campaign.sent}</p>
+                    <p className="text-xs text-muted-foreground">Отправлено</p>
+                  </div>
+                  <div className="text-center p-3 rounded-telegram bg-gradient-subtle border border-border/30">
+                    <p className="text-xl font-bold text-telegram-success">{campaign.delivered}</p>
+                    <p className="text-xs text-muted-foreground">Доставлено</p>
+                  </div>
+                  <div className="text-center p-3 rounded-telegram bg-gradient-subtle border border-border/30">
+                    <p className="text-xl font-bold text-telegram-warning">
+                      {campaign.total_targets > 0 ? Math.round((campaign.delivered / campaign.total_targets) * 100) : 0}%
+                    </p>
+                    <p className="text-xs text-muted-foreground">Конверсия</p>
+                  </div>
+                </div>
+
+                {campaign.status === "running" && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between text-sm mb-2">
+                      <span className="text-muted-foreground">Прогресс рассылки</span>
+                      <span className="text-foreground">{Math.round((campaign.sent / campaign.total_targets) * 100)}%</span>
+                    </div>
+                    <Progress value={(campaign.sent / campaign.total_targets) * 100} className="h-2" />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                    <div className="flex items-center space-x-1">
+                      <Users className="h-4 w-4" />
+                      <span>{campaign.total_targets} получателей</span>
+                    </div>
+                    {campaign.scheduled_for && (
+                      <div className="flex items-center space-x-1">
+                        <Clock className="h-4 w-4" />
+                        <span>Запланировано: {new Date(campaign.scheduled_for).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {campaign.status === "draft" || campaign.status === "paused" ? (
+                      <Button
+                        size="sm"
+                        onClick={() => controlCampaign(campaign.id, "start")}
+                        className="bg-gradient-telegram shadow-telegram"
+                      >
+                        <Play className="h-4 w-4 mr-2" />
+                        {campaign.status === "draft" ? "Запустить" : "Возобновить"}
+                      </Button>
+                    ) : campaign.status === "running" ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => controlCampaign(campaign.id, "pause")}
+                        >
+                          <Pause className="h-4 w-4 mr-2" />
+                          Пауза
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => controlCampaign(campaign.id, "stop")}
+                          className="text-telegram-error hover:text-telegram-error"
+                        >
+                          <Square className="h-4 w-4 mr-2" />
+                          Остановить
+                        </Button>
+                      </>
+                    ) : (
+                      <Button variant="outline" size="sm">
+                        <BarChart3 className="h-4 w-4 mr-2" />
+                        Статистика
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
     </div>
   );

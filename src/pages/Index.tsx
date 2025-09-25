@@ -1,13 +1,29 @@
 import { useState } from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import Navigation from "@/components/Navigation";
 import Dashboard from "@/components/Dashboard";
 import ContactsManager from "@/components/ContactsManager";
 import CampaignManager from "@/components/CampaignManager";
-import AuthDialog from "@/components/AuthDialog";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-telegram-blue"></div>
+          <p className="mt-4 text-muted-foreground">Загрузка...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -47,7 +63,6 @@ const Index = () => {
           {renderContent()}
         </div>
       </main>
-      <AuthDialog open={showAuthDialog} onOpenChange={setShowAuthDialog} />
     </div>
   );
 };
