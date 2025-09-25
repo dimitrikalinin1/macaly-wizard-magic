@@ -172,9 +172,11 @@ export type Database = {
           created_at: string
           daily_limit: number
           id: string
+          last_auth_attempt: string | null
           last_reset_date: string | null
           phone_number: string
           sent_today: number
+          session_data: string | null
           status: string
           updated_at: string
           user_id: string
@@ -185,9 +187,11 @@ export type Database = {
           created_at?: string
           daily_limit?: number
           id?: string
+          last_auth_attempt?: string | null
           last_reset_date?: string | null
           phone_number: string
           sent_today?: number
+          session_data?: string | null
           status?: string
           updated_at?: string
           user_id: string
@@ -198,9 +202,11 @@ export type Database = {
           created_at?: string
           daily_limit?: number
           id?: string
+          last_auth_attempt?: string | null
           last_reset_date?: string | null
           phone_number?: string
           sent_today?: number
+          session_data?: string | null
           status?: string
           updated_at?: string
           user_id?: string
@@ -212,6 +218,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_auth_data: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       reset_daily_limits: {
         Args: Record<PropertyKey, never>
         Returns: undefined
