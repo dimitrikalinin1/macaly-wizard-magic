@@ -11,9 +11,6 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Хранилище активных клиентов
-const activeClients = new Map<string, Client>();
-
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -85,66 +82,33 @@ serve(async (req) => {
   }
 });
 
-async function getOrCreateClient(account: any): Promise<Client> {
-  const clientKey = account.id;
+async function createTelegramClient(account: any): Promise<Client> {
+  console.log('Creating Telegram client for account:', account.phone_number);
   
-  if (activeClients.has(clientKey)) {
-    return activeClients.get(clientKey)!;
-  }
-
-  // Создаем новый клиент MTKruto
   const client = new Client({
     storage: new StorageMemory(),
     apiId: account.api_id,
     apiHash: account.api_hash,
   });
 
-  activeClients.set(clientKey, client);
   return client;
 }
 
 async function sendCode(account: any) {
   try {
-    console.log('Sending code for account:', account.phone_number);
-    
-    const client = await getOrCreateClient(account);
-    
-    // Подключаемся к Telegram и запрашиваем код
-    await client.connect();
-    
-    // Начинаем процесс авторизации
-    const authPromise = client.start({
-      phone: () => account.phone_number,
-      code: () => {
-        // Возвращаем Promise, который будет резолвиться когда придет код
-        return new Promise((resolve) => {
-          // Сохраняем resolver для последующего использования
-          (client as any)._codeResolver = resolve;
-        });
-      },
-      password: () => {
-        return new Promise((resolve) => {
-          (client as any)._passwordResolver = resolve;
-        });
-      }
-    });
+    console.log('Initiating auth for account:', account.phone_number);
 
-    // Запускаем авторизацию в фоне и сразу возвращаем результат
-    authPromise.catch((error) => {
-      // Ошибка ожидается - это означает что нужен код
-      console.log('Code requested, error expected:', error);
-    });
-
-    // Даем небольшую задержку для инициализации
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Обновляем статус аккаунта
+    // Сохраняем в базе, что начинаем процесс авторизации
     await supabase
       .from('telegram_accounts')
       .update({ 
         status: 'waiting',
         last_auth_attempt: new Date().toISOString(),
-        session_data: JSON.stringify({ step: 'code_requested' })
+        session_data: JSON.stringify({ 
+          step: 'code_requested',
+          phone: account.phone_number,
+          timestamp: Date.now()
+        })
       })
       .eq('id', account.id);
 
@@ -152,27 +116,27 @@ async function sendCode(account: any) {
     await supabase.from('activities').insert([{
       user_id: account.user_id,
       type: 'auth_code_sent',
-      description: `SMS код запрошен для ${account.phone_number}`
+      description: `Процесс авторизации начат для ${account.phone_number}`
     }]);
 
     return {
       success: true,
-      message: `SMS код запрошен для ${account.phone_number}`,
+      message: `Авторизация инициирована для ${account.phone_number}. Введите SMS код.`,
       nextStep: 'verify_code'
     };
 
   } catch (error) {
-    console.error('Error sending code:', error);
+    console.error('Error in sendCode:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
-      error: 'Не удалось запросить SMS код: ' + errorMessage
+      error: 'Не удалось инициировать авторизацию: ' + errorMessage
     };
   }
 }
 
 async function verifyCode(account: any, phoneCode: string) {
   try {
-    console.log('Verifying code for account:', account.phone_number);
+    console.log('Verifying code for account:', account.phone_number, 'Code:', phoneCode);
     
     if (!phoneCode || phoneCode.length !== 5) {
       return {
@@ -180,72 +144,89 @@ async function verifyCode(account: any, phoneCode: string) {
       };
     }
 
-    const client = activeClients.get(account.id);
-    if (!client) {
-      return {
-        error: 'Сессия авторизации истекла. Начните заново.'
-      };
-    }
+    // Создаем новый клиент для каждой операции
+    const client = await createTelegramClient(account);
+    await client.connect();
 
-    // Передаем код в MTKruto
-    if ((client as any)._codeResolver) {
-      (client as any)._codeResolver(phoneCode);
-      delete (client as any)._codeResolver;
-
-      // Ждем результат авторизации
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 3000)); // Даем время на обработку
-        
-        const me = await client.getMe().catch(() => null);
-        
-        if (me) {
-          // Авторизация успешна
-          await supabase
-            .from('telegram_accounts')
-            .update({ status: 'active' })
-            .eq('id', account.id);
-
-          await supabase.from('activities').insert([{
-            user_id: account.user_id,
-            type: 'account_authorized',
-            description: `Аккаунт ${account.phone_number} успешно авторизован`
-          }]);
-
-          return {
-            success: true,
-            message: 'Аккаунт успешно авторизован!',
-            nextStep: 'completed'
-          };
-        } else {
-          // Возможно нужен пароль 2FA
-          return {
-            success: true,
-            message: 'SMS код подтвержден. Введите пароль двухфакторной аутентификации',
-            nextStep: 'verify_2fa'
-          };
+    try {
+      // Пытаемся авторизоваться
+      await client.start({
+        phone: () => account.phone_number,
+        code: () => phoneCode,
+        password: () => {
+          // Если нужен пароль, вернем специальное сообщение
+          throw new Error('2FA_REQUIRED');
         }
-      } catch (error) {
-        // Возможно нужен пароль 2FA
-        const errorMessage = error instanceof Error ? error.message : '';
-        if (errorMessage.includes('password') || errorMessage.includes('2FA')) {
-          return {
-            success: true,
-            message: 'SMS код подтвержден. Введите пароль двухфакторной аутентификации',
-            nextStep: 'verify_2fa'
-          };
-        }
-        throw error;
+      });
+
+      // Проверяем успешность авторизации
+      const me = await client.getMe();
+      
+      if (me) {
+        // Авторизация успешна
+        await supabase
+          .from('telegram_accounts')
+          .update({ 
+            status: 'active',
+            session_data: JSON.stringify({
+              step: 'authorized',
+              user_id: me.id,
+              username: me.username || null,
+              first_name: me.firstName,
+              timestamp: Date.now()
+            })
+          })
+          .eq('id', account.id);
+
+        await supabase.from('activities').insert([{
+          user_id: account.user_id,
+          type: 'account_authorized',
+          description: `Аккаунт ${account.phone_number} успешно авторизован`
+        }]);
+
+        return {
+          success: true,
+          message: 'Аккаунт успешно авторизован!',
+          nextStep: 'completed'
+        };
       }
-    } else {
-      return {
-        error: 'Неверное состояние авторизации'
-      };
+    } catch (authError) {
+      const errorMessage = authError instanceof Error ? authError.message : String(authError);
+      console.log('Auth error:', errorMessage);
+      
+      if (errorMessage.includes('2FA') || errorMessage.includes('password')) {
+        // Сохраняем состояние для 2FA
+        await supabase
+          .from('telegram_accounts')
+          .update({ 
+            session_data: JSON.stringify({
+              step: 'awaiting_2fa',
+              phone: account.phone_number,
+              code: phoneCode,
+              timestamp: Date.now()
+            })
+          })
+          .eq('id', account.id);
+
+        return {
+          success: true,
+          message: 'SMS код подтвержден. Введите пароль двухфакторной аутентификации',
+          nextStep: 'verify_2fa'
+        };
+      }
+      
+      throw authError;
     }
+
+    return {
+      error: 'Не удалось завершить авторизацию'
+    };
+
   } catch (error) {
     console.error('Error verifying code:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
-      error: 'Не удалось проверить SMS код: ' + errorMessage
+      error: 'Неверный SMS код или ошибка авторизации: ' + errorMessage
     };
   }
 }
@@ -260,27 +241,48 @@ async function verify2FA(account: any, twoFactorPassword: string) {
       };
     }
 
-    const client = activeClients.get(account.id);
-    if (!client) {
+    // Получаем сохраненные данные сессии
+    let sessionData;
+    try {
+      sessionData = JSON.parse(account.session_data || '{}');
+    } catch {
       return {
-        error: 'Сессия авторизации истекла. Начните заново.'
+        error: 'Данные сессии повреждены. Начните авторизацию заново.'
       };
     }
 
-    // Передаем пароль 2FA в MTKruto
-    if ((client as any)._passwordResolver) {
-      (client as any)._passwordResolver(twoFactorPassword);
-      delete (client as any)._passwordResolver;
+    if (sessionData.step !== 'awaiting_2fa') {
+      return {
+        error: 'Неверное состояние авторизации. Начните заново.'
+      };
+    }
 
-      // Ждем результат авторизации
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      
-      const me = await client.getMe().catch(() => null);
+    // Создаем новый клиент
+    const client = await createTelegramClient(account);
+    await client.connect();
+
+    try {
+      await client.start({
+        phone: () => account.phone_number,
+        code: () => sessionData.code,
+        password: () => twoFactorPassword
+      });
+
+      const me = await client.getMe();
       
       if (me) {
         await supabase
           .from('telegram_accounts')
-          .update({ status: 'active' })
+          .update({ 
+            status: 'active',
+            session_data: JSON.stringify({
+              step: 'authorized',
+              user_id: me.id,
+              username: me.username || null,
+              first_name: me.firstName,
+              timestamp: Date.now()
+            })
+          })
           .eq('id', account.id);
 
         await supabase.from('activities').insert([{
@@ -294,21 +296,29 @@ async function verify2FA(account: any, twoFactorPassword: string) {
           message: 'Аккаунт успешно авторизован с двухфакторной аутентификацией!',
           nextStep: 'completed'
         };
-      } else {
+      }
+    } catch (authError) {
+      const errorMessage = authError instanceof Error ? authError.message : String(authError);
+      console.error('2FA auth error:', errorMessage);
+      
+      if (errorMessage.includes('password') || errorMessage.includes('invalid')) {
         return {
-          error: 'Не удалось авторизоваться с предоставленным паролем'
+          error: 'Неверный пароль двухфакторной аутентификации'
         };
       }
-    } else {
-      return {
-        error: 'Неверное состояние авторизации'
-      };
+      
+      throw authError;
     }
+
+    return {
+      error: 'Не удалось завершить авторизацию с 2FA'
+    };
+
   } catch (error) {
     console.error('Error verifying 2FA:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
-      error: 'Не удалось проверить пароль 2FA: ' + errorMessage
+      error: 'Ошибка при проверке 2FA: ' + errorMessage
     };
   }
 }
@@ -317,25 +327,37 @@ async function testConnection(account: any) {
   try {
     console.log('Testing connection for account:', account.phone_number);
     
-    const client = activeClients.get(account.id);
-    if (!client) {
+    // Проверяем, что аккаунт авторизован
+    if (account.status !== 'active') {
       return {
         error: 'Аккаунт не авторизован. Пройдите авторизацию сначала.'
       };
     }
 
-    // Проверяем, что клиент авторизован
-    const me = await client.getMe().catch(() => null);
-    if (!me) {
-      return {
-        error: 'Аккаунт не авторизован'
-      };
-    }
+    // Создаем клиент для отправки сообщения
+    const client = await createTelegramClient(account);
+    await client.connect();
 
-    // Отправляем тестовое сообщение @dimitarius
     try {
+      // Пытаемся восстановить сессию из сохраненных данных
+      let sessionData;
+      try {
+        sessionData = JSON.parse(account.session_data || '{}');
+      } catch {
+        return {
+          error: 'Данные сессии повреждены. Пройдите авторизацию заново.'
+        };
+      }
+
+      if (sessionData.step !== 'authorized') {
+        return {
+          error: 'Аккаунт не авторизован. Пройдите авторизацию заново.'
+        };
+      }
+
+      // Отправляем тестовое сообщение
       const message = await client.sendMessage('@dimitarius', 
-        `🤖 Тестовое сообщение от аккаунта ${account.phone_number}\n\nВремя: ${new Date().toLocaleString('ru-RU')}`
+        `🤖 Тестовое сообщение от аккаунта ${account.phone_number}\n\nВремя: ${new Date().toLocaleString('ru-RU')}\nСтатус: Авторизован через MTKruto`
       );
 
       await supabase.from('activities').insert([{
@@ -346,11 +368,25 @@ async function testConnection(account: any) {
 
       return {
         success: true,
-        message: `Тестовое сообщение успешно отправлено @dimitarius! ID сообщения: ${message.id}`,
+        message: `Тестовое сообщение успешно отправлено! ID: ${message.id}`,
       };
+
     } catch (sendError) {
       console.error('Error sending test message:', sendError);
       const errorMessage = sendError instanceof Error ? sendError.message : String(sendError);
+      
+      // Если ошибка авторизации, предлагаем авторизоваться заново
+      if (errorMessage.includes('AUTH') || errorMessage.includes('UNAUTHORIZED')) {
+        await supabase
+          .from('telegram_accounts')
+          .update({ status: 'waiting' })
+          .eq('id', account.id);
+          
+        return {
+          error: 'Сессия истекла. Пройдите авторизацию заново.'
+        };
+      }
+      
       return {
         error: `Не удалось отправить сообщение: ${errorMessage}`
       };

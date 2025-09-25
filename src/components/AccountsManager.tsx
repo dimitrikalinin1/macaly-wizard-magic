@@ -444,7 +444,7 @@ const AccountsManager = () => {
                       variant="outline" 
                       size="sm"
                       onClick={() => handleDeleteAccount(account.id)}
-                      className="text-telegram-error hover:text-telegram-error"
+                      className="text-telegram-error hover:text-telegram-error hover:bg-telegram-error/10"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
