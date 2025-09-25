@@ -20,7 +20,7 @@ import { useActivities } from "@/hooks/useActivities";
 import { useToast } from "@/components/ui/use-toast";
 import heroImage from "@/assets/telegram-hero.jpg";
 
-const Dashboard = () => {
+const Dashboard = ({ setActiveTab }: { setActiveTab?: (tab: string) => void }) => {
   const { accounts } = useTelegramAccounts();
   const { contactLists } = useContactLists();
   const { campaigns } = useCampaigns();
@@ -116,7 +116,10 @@ const Dashboard = () => {
               Комплексное управление аккаунтами и массовыми рассылками
             </p>
             <div className="mt-6 flex items-center space-x-4">
-              <Button variant="outline" className="bg-white/20 border-white/30 text-white hover:bg-white/30">
+              <Button 
+                onClick={() => setActiveTab('accounts')}
+                className="bg-gradient-telegram shadow-telegram"
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 Добавить аккаунт
               </Button>
@@ -169,7 +172,7 @@ const Dashboard = () => {
                   <Users className="h-5 w-5 text-telegram-blue" />
                   <span>Аккаунты Telegram</span>
                 </CardTitle>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={() => setActiveTab('accounts')}>
                   <Plus className="h-4 w-4 mr-2" />
                   Добавить
                 </Button>
@@ -230,15 +233,26 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <Button className="w-full justify-start bg-gradient-telegram shadow-telegram">
+                <Button 
+                  className="w-full justify-start bg-gradient-telegram shadow-telegram"
+                  onClick={() => setActiveTab('campaigns')}
+                >
                   <Plus className="h-4 w-4 mr-3" />
                   Создать кампанию
                 </Button>
-                <Button variant="outline" className="w-full justify-start">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => setActiveTab('contacts')}
+                >
                   <PhoneCall className="h-4 w-4 mr-3" />
                   Загрузить контакты
                 </Button>
-                <Button variant="outline" className="w-full justify-start">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => setActiveTab('analytics')}
+                >
                   <BarChart3 className="h-4 w-4 mr-3" />
                   Статистика
                 </Button>
