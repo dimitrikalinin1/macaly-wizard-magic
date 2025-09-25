@@ -5,6 +5,8 @@ import { useAuth } from './useAuth';
 export interface TelegramAccount {
   id: string;
   phone_number: string;
+  api_id: number | null;
+  api_hash: string | null;
   status: 'active' | 'waiting' | 'blocked';
   daily_limit: number;
   sent_today: number;
@@ -34,7 +36,7 @@ export const useTelegramAccounts = () => {
     setLoading(false);
   };
 
-  const addAccount = async (phoneNumber: string) => {
+  const addAccount = async (phoneNumber: string, apiId: number, apiHash: string) => {
     if (!user) return { error: 'Not authenticated' };
 
     const { data, error } = await supabase
@@ -42,6 +44,8 @@ export const useTelegramAccounts = () => {
       .insert([{
         user_id: user.id,
         phone_number: phoneNumber,
+        api_id: apiId,
+        api_hash: apiHash,
         status: 'waiting'
       }])
       .select()

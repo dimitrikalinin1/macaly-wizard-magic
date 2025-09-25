@@ -167,6 +167,8 @@ export type Database = {
       }
       telegram_accounts: {
         Row: {
+          api_hash: string | null
+          api_id: number | null
           created_at: string
           daily_limit: number
           id: string
@@ -178,6 +180,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          api_hash?: string | null
+          api_id?: number | null
           created_at?: string
           daily_limit?: number
           id?: string
@@ -189,6 +193,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          api_hash?: string | null
+          api_id?: number | null
           created_at?: string
           daily_limit?: number
           id?: string

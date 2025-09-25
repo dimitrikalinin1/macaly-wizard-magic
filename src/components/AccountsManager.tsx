@@ -36,7 +36,7 @@ const AccountsManager = () => {
     phoneNumber: "",
     apiId: "",
     apiHash: "",
-    dailyLimit: "50"
+    dailyLimit: 50
   });
   const [accountSettings, setAccountSettings] = useState({
     delays: {
@@ -80,7 +80,7 @@ const AccountsManager = () => {
   };
 
   const handleAddAccount = async () => {
-    if (!newAccount.phoneNumber) {
+    if (!newAccount.phoneNumber.trim()) {
       toast({
         title: "Ошибка",
         description: "Введите номер телефона",
@@ -89,7 +89,35 @@ const AccountsManager = () => {
       return;
     }
 
-    const { error } = await addAccount(newAccount.phoneNumber);
+    if (!newAccount.apiId.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Введите API ID",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!newAccount.apiHash.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Введите API Hash",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const apiId = parseInt(newAccount.apiId.trim());
+    if (isNaN(apiId)) {
+      toast({
+        title: "Ошибка",
+        description: "API ID должен быть числом",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { error } = await addAccount(newAccount.phoneNumber.trim(), apiId, newAccount.apiHash.trim());
     
     if (error) {
       toast({
@@ -98,7 +126,7 @@ const AccountsManager = () => {
         variant: "destructive",
       });
     } else {
-      setNewAccount({ phoneNumber: "", apiId: "", apiHash: "", dailyLimit: "50" });
+      setNewAccount({ phoneNumber: "", apiId: "", apiHash: "", dailyLimit: 50 });
       setShowAddDialog(false);
       toast({
         title: "Успех!",
@@ -208,6 +236,24 @@ const AccountsManager = () => {
               </DialogHeader>
               <div className="space-y-4">
                 <div>
+                  <Label htmlFor="apiId">API ID</Label>
+                  <Input
+                    id="apiId"
+                    placeholder="Получите на my.telegram.org"
+                    value={newAccount.apiId}
+                    onChange={(e) => setNewAccount({ ...newAccount, apiId: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="apiHash">API Hash</Label>
+                  <Input
+                    id="apiHash"
+                    placeholder="Получите на my.telegram.org"
+                    value={newAccount.apiHash}
+                    onChange={(e) => setNewAccount({ ...newAccount, apiHash: e.target.value })}
+                  />
+                </div>
+                <div>
                   <Label htmlFor="phoneNumber">Номер телефона</Label>
                   <Input
                     id="phoneNumber"
@@ -223,7 +269,7 @@ const AccountsManager = () => {
                     type="number"
                     placeholder="50"
                     value={newAccount.dailyLimit}
-                    onChange={(e) => setNewAccount({ ...newAccount, dailyLimit: e.target.value })}
+                    onChange={(e) => setNewAccount({ ...newAccount, dailyLimit: parseInt(e.target.value) || 50 })}
                   />
                 </div>
                 <div className="flex justify-end space-x-3">
