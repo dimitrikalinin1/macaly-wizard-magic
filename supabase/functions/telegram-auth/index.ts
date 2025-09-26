@@ -237,17 +237,34 @@ async function verifyCode(account: any, phoneCode: string) {
       };
     }
 
-    // Создаем новый клиент для каждой операции
+    // Проверяем, что процесс авторизации был инициирован
+    let sessionData: any = {};
+    try {
+      sessionData = JSON.parse(account.session_data || '{}');
+    } catch {
+      return {
+        error: 'Данные сессии повреждены. Начните авторизацию заново.'
+      };
+    }
+
+    if (sessionData.step !== 'code_requested') {
+      return {
+        error: 'Неверное состояние авторизации. Сначала запросите код.'
+      };
+    }
+
+    // Создаем клиент 
     const client = await createTelegramClient(account);
     await client.connect();
 
     try {
-      // Пытаемся авторизоваться
+      // Завершаем процесс авторизации с введенным кодом
+      // Используем подход с прямой авторизацией, не вызывая start() заново
       await client.start({
         phone: () => account.phone_number,
         code: () => phoneCode,
         password: () => {
-          // Если нужен пароль, вернем специальное сообщение
+          // Если нужен пароль 2FA, остановимся здесь
           throw new Error('2FA_REQUIRED');
         }
       });
@@ -287,8 +304,8 @@ async function verifyCode(account: any, phoneCode: string) {
       const errorMessage = authError instanceof Error ? authError.message : String(authError);
       console.log('Auth error:', errorMessage);
       
-      if (errorMessage.includes('2FA') || errorMessage.includes('password')) {
-        // Сохраняем состояние для 2FA
+      if (errorMessage.includes('2FA_REQUIRED') || errorMessage.includes('password')) {
+        // Сохраняем состояние для 2FA (код уже принят)
         await supabase
           .from('telegram_accounts')
           .update({ 
@@ -308,7 +325,7 @@ async function verifyCode(account: any, phoneCode: string) {
         };
       }
 
-      // Обрабатываем ограничение FLOOD_WAIT как ожидаемую ситуацию (200 OK)
+      // Обрабатываем ограничение FLOOD_WAIT
       const flood = /FLOOD_WAIT_(\d+)/.exec(errorMessage);
       if (flood) {
         const waitSeconds = parseInt(flood[1], 10);
@@ -316,6 +333,13 @@ async function verifyCode(account: any, phoneCode: string) {
           error: 'FLOOD_WAIT',
           waitSeconds,
           message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
+        };
+      }
+
+      // Проверяем на неверный код
+      if (errorMessage.includes('PHONE_CODE_INVALID') || errorMessage.includes('invalid')) {
+        return {
+          error: 'Неверный SMS код. Проверьте код и попробуйте снова.'
         };
       }
       
@@ -330,7 +354,7 @@ async function verifyCode(account: any, phoneCode: string) {
     console.error('Error verifying code:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
-      error: 'Неверный SMS код или ошибка авторизации: ' + errorMessage
+      error: 'Ошибка при проверке кода: ' + errorMessage
     };
   }
 }
