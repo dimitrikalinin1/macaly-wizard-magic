@@ -8,6 +8,7 @@ import CampaignManager from "@/components/CampaignManager";
 import AccountsManager from "@/components/AccountsManager";
 import Analytics from "@/components/Analytics";
 import Settings from "@/components/Settings";
+import { IncomingMessages } from "@/components/IncomingMessages";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -38,6 +39,8 @@ const Index = () => {
         return <ContactsManager />;
       case "campaigns":
         return <CampaignManager />;
+      case "messages":
+        return <IncomingMessages />;
       case "analytics":
         return <Analytics />;
       case "settings":

@@ -2,3 +2,6 @@ project_id = "ulpqgizcyvmeuyryzvas"
 
 [functions.telegram-auth]
 verify_jwt = true
+
+[functions.telegram-checker]
+verify_jwt = true

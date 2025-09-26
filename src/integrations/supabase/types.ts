@@ -165,6 +165,54 @@ export type Database = {
           },
         ]
       }
+      incoming_messages: {
+        Row: {
+          chat_id: number
+          created_at: string
+          from_first_name: string | null
+          from_last_name: string | null
+          from_phone: string
+          from_username: string | null
+          id: string
+          message_id: number
+          message_text: string | null
+          message_type: string
+          received_at: string
+          telegram_account_id: string
+          user_id: string
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          from_first_name?: string | null
+          from_last_name?: string | null
+          from_phone: string
+          from_username?: string | null
+          id?: string
+          message_id: number
+          message_text?: string | null
+          message_type?: string
+          received_at?: string
+          telegram_account_id: string
+          user_id: string
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          from_first_name?: string | null
+          from_last_name?: string | null
+          from_phone?: string
+          from_username?: string | null
+          id?: string
+          message_id?: number
+          message_text?: string | null
+          message_type?: string
+          received_at?: string
+          telegram_account_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       telegram_accounts: {
         Row: {
           api_hash: string | null

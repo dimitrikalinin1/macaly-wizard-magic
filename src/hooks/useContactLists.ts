@@ -76,41 +76,52 @@ export const useContactLists = () => {
       description: `Загружен список из ${phoneNumbers.length} контактов`
     }]);
 
-    // Симулируем проверку контактов
+    // Запускаем реальную проверку через Telegram
     setTimeout(() => {
-      simulateVerification(contactList.id, phoneNumbers.length);
-    }, 2000);
+      verifyContactsWithTelegram(contactList.id);
+    }, 1000);
 
     return { data: contactList, error: null };
   };
 
-  const simulateVerification = async (contactListId: string, totalNumbers: number) => {
-    const verifiedNumbers = Math.floor(totalNumbers * 0.9);
-    const telegramUsers = Math.floor(totalNumbers * 0.7);
+  const verifyContactsWithTelegram = async (contactListId: string) => {
+    try {
+      console.log('Starting telegram verification for list:', contactListId);
+      
+      const { data, error } = await supabase.functions.invoke('telegram-checker', {
+        body: { contactListId }
+      });
 
-    // Обновляем статистику списка
-    const { data, error } = await supabase
-      .from('contact_lists')
-      .update({
-        verified_numbers: verifiedNumbers,
-        telegram_users: telegramUsers,
-        status: 'completed'
-      })
-      .eq('id', contactListId)
-      .select()
-      .single();
+      if (error) {
+        console.error('Telegram verification error:', error);
+        // В случае ошибки обновляем статус на error
+        await supabase
+          .from('contact_lists')
+          .update({ status: 'error' })
+          .eq('id', contactListId);
+        
+        setContactLists(prev => prev.map(list => 
+          list.id === contactListId ? { ...list, status: 'error' as const } : list
+        ));
+        return;
+      }
 
-    if (!error && data) {
-      setContactLists(prev => prev.map(list => 
-        list.id === contactListId ? data as ContactList : list
-      ));
-
-      // Обновляем случайные контакты как проверенные
+      console.log('Telegram verification completed:', data);
+      
+      // Обновляем локальное состояние с актуальными данными
+      fetchContactLists();
+      
+    } catch (error) {
+      console.error('Error calling telegram-checker:', error);
+      // В случае ошибки обновляем статус
       await supabase
-        .from('contacts')
-        .update({ is_verified: true, has_telegram: true })
-        .eq('contact_list_id', contactListId)
-        .limit(telegramUsers);
+        .from('contact_lists')
+        .update({ status: 'error' })
+        .eq('id', contactListId);
+      
+      setContactLists(prev => prev.map(list => 
+        list.id === contactListId ? { ...list, status: 'error' as const } : list
+      ));
     }
   };
 

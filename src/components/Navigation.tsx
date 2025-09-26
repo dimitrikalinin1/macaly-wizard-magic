@@ -9,7 +9,8 @@ import {
   BarChart3, 
   Settings,
   Plus,
-  Bell
+  Bell,
+  Inbox
 } from "lucide-react";
 
 interface NavigationProps {
@@ -44,6 +45,12 @@ const Navigation = ({ activeTab, setActiveTab }: NavigationProps) => {
       label: "Кампании",
       icon: MessageCircle,
       badge: "3",
+    },
+    {
+      id: "messages",
+      label: "Входящие сообщения",
+      icon: Inbox,
+      badge: notifications > 0 ? notifications.toString() : null,
     },
     {
       id: "analytics",
