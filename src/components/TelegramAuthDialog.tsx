@@ -55,7 +55,6 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
 
       if (error) {
         console.error('Telegram auth error:', error);
-        // Показать пользователю текст ошибки из ответа
         const errorMessage = error.message || String(error);
         toast({
           title: "Ошибка Telegram API",
@@ -64,6 +63,17 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
         });
         throw new Error(errorMessage);
       }
+
+      if (data?.error) {
+        console.error('Function returned error:', data.error);
+        toast({
+          title: "Ошибка авторизации",
+          description: data.error,
+          variant: "destructive",
+        });
+        throw new Error(data.error);
+      }
+
       return data;
     } catch (err: any) {
       console.error('Unexpected error:', err);
