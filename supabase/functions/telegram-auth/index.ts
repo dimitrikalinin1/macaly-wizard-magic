@@ -237,6 +237,15 @@ async function sendCode(account: any) {
     return { error: 'Неверный номер телефона' };
   }
 
+  // Обработка ошибки соединения
+  if (msg.toLowerCase().includes('unreachable')) {
+    return {
+      error: 'Не удалось установить соединение с серверами Telegram. ' +
+             'Это может быть связано с блокировкой или отсутствием интернет-доступа ' +
+             'у среды Supabase. Попробуйте позднее или обратитесь в поддержку.'
+    };
+  }
+
   // Обработка AssertionError из MTKruto
   if (msg.includes('AssertionError')) {
     return { error: 'Ошибка MTProto: ' + msg };
