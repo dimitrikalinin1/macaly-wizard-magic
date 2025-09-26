@@ -237,7 +237,12 @@ async function sendCode(account: any) {
     return { error: 'Неверный номер телефона' };
   }
 
-  throw startError;
+  // Обработка AssertionError из MTKruto
+  if (msg.includes('AssertionError')) {
+    return { error: 'Ошибка MTProto: ' + msg };
+  }
+
+  return { error: 'Не удалось инициировать авторизацию: ' + msg };
 }
   } catch (error) {
     console.error('Error in sendCode:', error);
