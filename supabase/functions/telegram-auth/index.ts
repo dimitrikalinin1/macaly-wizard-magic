@@ -387,6 +387,18 @@ await client.connect();
   } catch (error) {
     console.error('Error verifying code:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Обрабатываем ограничение FLOOD_WAIT
+    const flood = /FLOOD_WAIT_(\d+)/.exec(errorMessage);
+    if (flood) {
+      const waitSeconds = parseInt(flood[1], 10);
+      return {
+        error: 'FLOOD_WAIT',
+        waitSeconds,
+        message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
+      };
+    }
+    
     return {
       error: 'Ошибка при проверке кода: ' + errorMessage
     };
@@ -490,6 +502,18 @@ async function verify2FA(account: any, twoFactorPassword: string) {
   } catch (error) {
     console.error('Error verifying 2FA:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Обрабатываем ограничение FLOOD_WAIT
+    const flood = /FLOOD_WAIT_(\d+)/.exec(errorMessage);
+    if (flood) {
+      const waitSeconds = parseInt(flood[1], 10);
+      return {
+        error: 'FLOOD_WAIT',
+        waitSeconds,
+        message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
+      };
+    }
+    
     return {
       error: 'Ошибка при проверке 2FA: ' + errorMessage
     };

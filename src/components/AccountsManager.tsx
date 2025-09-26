@@ -92,19 +92,21 @@ const AccountsManager = () => {
       return;
     }
 
-    if (!newAccount.apiId.trim()) {
+    // Проверить формат номера телефона
+    const phoneRegex = /^\+\d{10,15}$/;
+    if (!phoneRegex.test(newAccount.phoneNumber.trim())) {
       toast({
-        title: "Ошибка",
-        description: "Введите API ID",
+        title: "Неверный формат номера",
+        description: "Введите номер в международном формате, например +79161234567",
         variant: "destructive",
       });
       return;
     }
 
-    if (!newAccount.apiHash.trim()) {
+    if (!newAccount.apiId.trim() || !newAccount.apiHash.trim()) {
       toast({
-        title: "Ошибка",
-        description: "Введите API Hash",
+        title: "Недостаточно данных",
+        description: "Заполните API ID и API Hash, полученные на my.telegram.org",
         variant: "destructive",
       });
       return;

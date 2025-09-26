@@ -53,16 +53,53 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Telegram auth error:', error);
+        // Показать пользователю текст ошибки из ответа
+        const errorMessage = error.message || String(error);
+        toast({
+          title: "Ошибка Telegram API",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        throw new Error(errorMessage);
+      }
       return data;
-    } catch (error) {
-      console.error('Telegram auth error:', error);
-      throw error;
+    } catch (err: any) {
+      console.error('Unexpected error:', err);
+      const errorMessage = err?.message || String(err);
+      toast({
+        title: "Неожиданная ошибка",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw err;
     }
   };
 
   const handleSendCode = async () => {
     if (!account) return;
+
+    // Проверить, что у аккаунта заполнены API ID и API Hash
+    if (!account.api_id || !account.api_hash) {
+      toast({
+        title: "Недостаточно данных",
+        description: "Заполните API ID и API Hash, полученные на my.telegram.org",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Проверить формат номера телефона
+    const phoneRegex = /^\+\d{10,15}$/;
+    if (!phoneRegex.test(account.phone_number)) {
+      toast({
+        title: "Неверный формат номера",
+        description: "Введите номер в международном формате, например +79161234567",
+        variant: "destructive",
+      });
+      return;
+    }
     
     setLoading(true);
     try {
@@ -87,11 +124,8 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
         throw new Error(result?.error || 'Ошибка отправки кода');
       }
     } catch (error: any) {
-      toast({
-        title: "Ошибка",
-        description: error.message || "Не удалось отправить SMS код",
-        variant: "destructive",
-      });
+      // Ошибка уже обработана в callTelegramAuth, просто логируем здесь
+      console.error('Send code failed:', error);
     } finally {
       setLoading(false);
     }
