@@ -98,36 +98,129 @@ async function sendCode(account: any) {
   try {
     console.log('Initiating auth for account:', account.phone_number);
 
-    // Сохраняем в базе, что начинаем процесс авторизации
-    await supabase
-      .from('telegram_accounts')
-      .update({ 
-        status: 'waiting',
-        last_auth_attempt: new Date().toISOString(),
-        session_data: JSON.stringify({ 
-          step: 'code_requested',
-          phone: account.phone_number,
-          timestamp: Date.now()
-        })
-      })
-      .eq('id', account.id);
+    // Создаем клиент и инициируем отправку кода через MTKruto
+    const client = await createTelegramClient(account);
+    await client.connect();
 
-    // Добавляем активность
-    await supabase.from('activities').insert([{
-      user_id: account.user_id,
-      type: 'auth_code_sent',
-      description: `Процесс авторизации начат для ${account.phone_number}`
-    }]);
+    try {
+      // Вызов start с прерыванием на этапе запроса кода
+      await client.start({
+        phone: () => account.phone_number,
+        code: () => {
+          // Как только библиотека запросит код, это означает что SMS уже отправлен
+          throw new Error('CODE_REQUESTED');
+        },
+        password: () => {
+          // На этапе отправки кода пароль не нужен
+          throw new Error('PASSWORD_NOT_REQUIRED');
+        }
+      });
 
+      // Если каким-то образом авторизация прошла без запроса кода, считаем что аккаунт уже авторизован
+      const me = await client.getMe();
+      if (me) {
+        await supabase
+          .from('telegram_accounts')
+          .update({
+            status: 'active',
+            session_data: JSON.stringify({
+              step: 'authorized',
+              user_id: me.id,
+              username: me.username || null,
+              first_name: me.firstName,
+              timestamp: Date.now()
+            })
+          })
+          .eq('id', account.id);
+
+        await supabase.from('activities').insert([{
+          user_id: account.user_id,
+          type: 'account_authorized',
+          description: `Аккаунт ${account.phone_number} уже авторизован`
+        }]);
+
+        return {
+          success: true,
+          message: `Аккаунт уже авторизован.`,
+          nextStep: 'completed'
+        };
+      }
+    } catch (startError) {
+      const msg = startError instanceof Error ? startError.message : String(startError);
+      console.log('sendCode start error/control:', msg);
+
+      // Обрабатываем ожидание из-за частых запросов
+      const flood = /FLOOD_WAIT_(\d+)/.exec(msg);
+      if (flood) {
+        const waitSeconds = parseInt(flood[1], 10);
+        return {
+          error: 'FLOOD_WAIT',
+          waitSeconds,
+          message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
+        };
+      }
+
+      if (
+        msg.includes('PHONE_NUMBER_INVALID') ||
+        msg.toLowerCase().includes('invalid phone')
+      ) {
+        return { error: 'Неверный номер телефона' };
+      }
+
+      // Наше "управляющее" исключение — код был запрошен и отправлен
+      if (msg.includes('CODE_REQUESTED')) {
+        // Сохраняем в базе, что начинаем процесс авторизации и код отправлен
+        await supabase
+          .from('telegram_accounts')
+          .update({
+            status: 'waiting',
+            last_auth_attempt: new Date().toISOString(),
+            session_data: JSON.stringify({
+              step: 'code_requested',
+              phone: account.phone_number,
+              timestamp: Date.now()
+            })
+          })
+          .eq('id', account.id);
+
+        // Логируем активность
+        await supabase.from('activities').insert([{
+          user_id: account.user_id,
+          type: 'auth_code_sent',
+          description: `Код для авторизации отправлен на ${account.phone_number}`
+        }]);
+
+        return {
+          success: true,
+          message: `Код отправлен на номер ${account.phone_number}. Введите SMS код.`,
+          nextStep: 'verify_code'
+        };
+      }
+
+      // Неожиданная ошибка — пробрасываем дальше
+      throw startError;
+    }
+
+    // На всякий случай, если не попали ни в один из кейсов
     return {
-      success: true,
-      message: `Авторизация инициирована для ${account.phone_number}. Введите SMS код.`,
-      nextStep: 'verify_code'
+      error: 'Не удалось инициировать отправку кода'
     };
 
   } catch (error) {
     console.error('Error in sendCode:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Обрабатываем ограничение FLOOD_WAIT как ожидаемую ситуацию (200 OK)
+    const flood = /FLOOD_WAIT_(\d+)/.exec(errorMessage);
+    if (flood) {
+      const waitSeconds = parseInt(flood[1], 10);
+      return {
+        error: 'FLOOD_WAIT',
+        waitSeconds,
+        message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
+      };
+    }
+
     return {
       error: 'Не удалось инициировать авторизацию: ' + errorMessage
     };

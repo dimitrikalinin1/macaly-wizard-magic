@@ -68,14 +68,23 @@ const TelegramAuthDialog = ({ isOpen, onClose, account, onSuccess }: TelegramAut
     try {
       const result = await callTelegramAuth('send_code');
       
-      if (result.success) {
+      if (result?.error === 'FLOOD_WAIT') {
+        toast({
+          title: 'Слишком много попыток',
+          description: result.message || 'Подождите и попробуйте снова.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      if (result?.success) {
         setStep('verify_code');
         toast({
-          title: "Код отправлен!",
+          title: 'Код отправлен!',
           description: result.message,
         });
       } else {
-        throw new Error(result.error || 'Ошибка отправки кода');
+        throw new Error(result?.error || 'Ошибка отправки кода');
       }
     } catch (error: any) {
       toast({
