@@ -127,6 +127,78 @@ export const useCampaigns = () => {
     return { data, error };
   };
 
+  const startCampaign = async (campaignId: string) => {
+    if (!user) return { error: 'Not authenticated' };
+
+    try {
+      console.log('Starting campaign:', campaignId);
+      
+      // Обновляем статус на "running"
+      await updateCampaignStatus(campaignId, 'running');
+      
+      // Запускаем первый батч отправки
+      const { data, error } = await supabase.functions.invoke('telegram-send', {
+        body: { campaignId, batchSize: 10 }
+      });
+
+      if (error) {
+        console.error('Campaign start error:', error);
+        // Возвращаем статус обратно в draft при ошибке
+        await updateCampaignStatus(campaignId, 'draft');
+        return { error };
+      }
+
+      console.log('Campaign batch started:', data);
+      
+      // Обновляем локальное состояние после успешной отправки
+      fetchCampaigns();
+      
+      // Добавить активность
+      const campaign = campaigns.find(c => c.id === campaignId);
+      await supabase.from('activities').insert([{
+        user_id: user.id,
+        type: 'campaign_batch_sent',
+        description: `Отправлен батч для кампании "${campaign?.name}"`
+      }]);
+
+      return { data, error: null };
+      
+    } catch (error) {
+      console.error('Error starting campaign:', error);
+      // Возвращаем статус обратно в draft при ошибке
+      await updateCampaignStatus(campaignId, 'draft');
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  };
+
+  const sendNextBatch = async (campaignId: string) => {
+    if (!user) return { error: 'Not authenticated' };
+
+    try {
+      console.log('Sending next batch for campaign:', campaignId);
+      
+      const { data, error } = await supabase.functions.invoke('telegram-send', {
+        body: { campaignId, batchSize: 10 }
+      });
+
+      if (error) {
+        console.error('Next batch error:', error);
+        return { error };
+      }
+
+      console.log('Next batch sent:', data);
+      
+      // Обновляем локальное состояние
+      fetchCampaigns();
+
+      return { data, error: null };
+      
+    } catch (error) {
+      console.error('Error sending next batch:', error);
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  };
+
   const deleteCampaign = async (id: string) => {
     const campaign = campaigns.find(c => c.id === id);
     const { error } = await supabase
@@ -159,6 +231,8 @@ export const useCampaigns = () => {
     loading,
     createCampaign,
     updateCampaignStatus,
+    startCampaign,
+    sendNextBatch,
     deleteCampaign,
     refetch: fetchCampaigns
   };
