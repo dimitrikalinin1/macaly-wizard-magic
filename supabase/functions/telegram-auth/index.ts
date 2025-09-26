@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
-import { Client, StorageMemory } from "https://esm.sh/jsr/@mtkruto/mtkruto@0.71.0";
+import { Client, StorageMemory, type DC } from "https://esm.sh/jsr/@mtkruto/mtkruto@0.71.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,13 +82,14 @@ serve(async (req) => {
   }
 });
 
-async function createTelegramClient(account: any): Promise<Client> {
-  console.log('Creating Telegram client for account:', account.phone_number);
+async function createTelegramClient(account: any, initialDc?: DC): Promise<Client> {
+  console.log('Creating Telegram client for account:', account.phone_number, initialDc ? `DC: ${initialDc}` : '');
   
   const client = new Client({
     storage: new StorageMemory(),
     apiId: account.api_id,
     apiHash: account.api_hash,
+    ...(initialDc ? { initialDc } : {}),
   });
 
   return client;
@@ -164,26 +165,75 @@ async function sendCode(account: any) {
         message: `Код отправлен на номер ${account.phone_number}. Введите SMS код.`,
         nextStep: 'verify_code'
       };
-    } catch (startError) {
-      const msg = startError instanceof Error ? startError.message : String(startError);
-      console.log('sendCode error:', msg);
+} catch (startError) {
+  const msg = startError instanceof Error ? startError.message : String(startError);
+  console.log('sendCode error:', msg);
 
-      const flood = /FLOOD_WAIT_(\d+)/.exec(msg);
-      if (flood) {
-        const waitSeconds = parseInt(flood[1], 10);
-        return {
-          error: 'FLOOD_WAIT',
-          waitSeconds,
-          message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
-        };
-      }
+  // Обработка миграции дата-центра (PHONE_MIGRATE_X)
+  const migrate = /PHONE_MIGRATE_(\d+)/.exec(msg);
+  if (migrate) {
+    const targetDc = parseInt(migrate[1], 10);
+    console.log('Retrying auth.sendCode on migrated DC:', targetDc);
 
-      if (msg.includes('PHONE_NUMBER_INVALID')) {
-        return { error: 'Неверный номер телефона' };
-      }
+    const migratedClient = await createTelegramClient(account, targetDc as unknown as DC);
+    await migratedClient.connect();
 
-      throw startError;
-    }
+    // Повторяем запрос кода на корректном DC
+    const sent: any = await migratedClient.invoke({
+      _: 'auth.sendCode',
+      phone_number: account.phone_number,
+      api_id: account.api_id,
+      api_hash: account.api_hash,
+      settings: { _: 'codeSettings' }
+    });
+
+    const phoneCodeHash = sent?.phone_code_hash;
+
+    await supabase
+      .from('telegram_accounts')
+      .update({
+        status: 'waiting',
+        last_auth_attempt: new Date().toISOString(),
+        session_data: JSON.stringify({
+          step: 'code_sent',
+          phone: account.phone_number,
+          phone_code_hash: phoneCodeHash,
+          phone_dc: targetDc,
+          timestamp: Date.now()
+        })
+      })
+      .eq('id', account.id);
+
+    await supabase.from('activities').insert([{
+      user_id: account.user_id,
+      type: 'auth_code_sent',
+      description: `SMS код отправлен на ${account.phone_number} (DC ${targetDc})`
+    }]);
+
+    return {
+      success: true,
+      message: `Код отправлен на номер ${account.phone_number}. Введите SMS код.`,
+      nextStep: 'verify_code'
+    };
+  }
+
+  // Обрабатываем ограничение FLOOD_WAIT
+  const flood = /FLOOD_WAIT_(\d+)/.exec(msg);
+  if (flood) {
+    const waitSeconds = parseInt(flood[1], 10);
+    return {
+      error: 'FLOOD_WAIT',
+      waitSeconds,
+      message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
+    };
+  }
+
+  if (msg.includes('PHONE_NUMBER_INVALID')) {
+    return { error: 'Неверный номер телефона' };
+  }
+
+  throw startError;
+}
   } catch (error) {
     console.error('Error in sendCode:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -226,9 +276,10 @@ async function verifyCode(account: any, phoneCode: string) {
       };
     }
 
-    // Создаем клиент 
-    const client = await createTelegramClient(account);
-    await client.connect();
+// Создаем клиент на корректном DC (если известен)
+const initialDc = Number((sessionData && sessionData.phone_dc) || undefined) || undefined;
+const client = await createTelegramClient(account, (initialDc as unknown as DC));
+await client.connect();
 
     try {
       // Авторизуемся напрямую без повторной отправки SMS
