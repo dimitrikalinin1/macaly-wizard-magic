@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.58.0';
-import { Client, StorageMemory, type DC } from "https://esm.sh/jsr/@mtkruto/mtkruto@0.71.0";
+import { Client, StorageMemory } from "https://esm.sh/jsr/@mtkruto/mtkruto@0.71.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,16 +82,21 @@ serve(async (req) => {
   }
 });
 
-async function createTelegramClient(account: any, initialDc?: DC): Promise<Client> {
+async function createTelegramClient(account: any, initialDc?: any): Promise<Client> {
   console.log('Creating Telegram client for account:', account.phone_number, initialDc ? `DC: ${initialDc}` : '');
   
-  const client = new Client({
+  const clientParams: any = {
     storage: new StorageMemory(),
     apiId: account.api_id,
     apiHash: account.api_hash,
-    ...(initialDc ? { initialDc } : {}),
-  });
+  };
 
+  // Добавляем initialDc только если он задан
+  if (initialDc) {
+    clientParams.initialDc = initialDc;
+  }
+
+  const client = new Client(clientParams);
   return client;
 }
 
@@ -175,7 +180,7 @@ async function sendCode(account: any) {
     const targetDc = parseInt(migrate[1], 10);
     console.log('Retrying auth.sendCode on migrated DC:', targetDc);
 
-    const migratedClient = await createTelegramClient(account, targetDc as unknown as DC);
+    const migratedClient = await createTelegramClient(account, targetDc);
     await migratedClient.connect();
 
     // Повторяем запрос кода на корректном DC
@@ -278,7 +283,7 @@ async function verifyCode(account: any, phoneCode: string) {
 
 // Создаем клиент на корректном DC (если известен)
 const initialDc = Number((sessionData && sessionData.phone_dc) || undefined) || undefined;
-const client = await createTelegramClient(account, (initialDc as unknown as DC));
+const client = await createTelegramClient(account, initialDc);
 await client.connect();
 
     try {
