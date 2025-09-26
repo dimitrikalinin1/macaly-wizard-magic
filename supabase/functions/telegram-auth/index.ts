@@ -98,36 +98,31 @@ async function sendCode(account: any) {
   try {
     console.log('Initiating auth for account:', account.phone_number);
 
-    // Создаем клиент и инициируем отправку кода через MTKruto
     const client = await createTelegramClient(account);
     await client.connect();
 
     try {
-      // Вызов start с прерыванием на этапе запроса кода
-      await client.start({
-        phone: () => account.phone_number,
-        code: () => {
-          // Как только библиотека запросит код, это означает что SMS уже отправлен
-          throw new Error('CODE_REQUESTED');
-        },
-        password: () => {
-          // На этапе отправки кода пароль не нужен
-          throw new Error('PASSWORD_NOT_REQUIRED');
-        }
+      // Явно запрашиваем код и сохраняем phone_code_hash, чтобы потом не отправлять код повторно
+      const sent: any = await client.invoke({
+        _: 'auth.sendCode',
+        phone_number: account.phone_number,
+        api_id: account.api_id,
+        api_hash: account.api_hash,
+        settings: { _: 'codeSettings' }
       });
 
-      // Если каким-то образом авторизация прошла без запроса кода, считаем что аккаунт уже авторизован
-      const me = await client.getMe();
-      if (me) {
+      // Если неожиданно вернулась готовая авторизация
+      if (sent && sent.authorization) {
+        const me = await client.getMe();
         await supabase
           .from('telegram_accounts')
           .update({
             status: 'active',
             session_data: JSON.stringify({
               step: 'authorized',
-              user_id: me.id,
-              username: me.username || null,
-              first_name: me.firstName,
+              user_id: me?.id ?? null,
+              username: me?.username ?? null,
+              first_name: me?.firstName ?? null,
               timestamp: Date.now()
             })
           })
@@ -139,17 +134,40 @@ async function sendCode(account: any) {
           description: `Аккаунт ${account.phone_number} уже авторизован`
         }]);
 
-        return {
-          success: true,
-          message: `Аккаунт уже авторизован.`,
-          nextStep: 'completed'
-        };
+        return { success: true, message: 'Аккаунт уже авторизован', nextStep: 'completed' };
       }
+
+      const phoneCodeHash = sent?.phone_code_hash;
+
+      await supabase
+        .from('telegram_accounts')
+        .update({
+          status: 'waiting',
+          last_auth_attempt: new Date().toISOString(),
+          session_data: JSON.stringify({
+            step: 'code_sent',
+            phone: account.phone_number,
+            phone_code_hash: phoneCodeHash,
+            timestamp: Date.now()
+          })
+        })
+        .eq('id', account.id);
+
+      await supabase.from('activities').insert([{
+        user_id: account.user_id,
+        type: 'auth_code_sent',
+        description: `SMS код отправлен на ${account.phone_number}`
+      }]);
+
+      return {
+        success: true,
+        message: `Код отправлен на номер ${account.phone_number}. Введите SMS код.`,
+        nextStep: 'verify_code'
+      };
     } catch (startError) {
       const msg = startError instanceof Error ? startError.message : String(startError);
-      console.log('sendCode start error/control:', msg);
+      console.log('sendCode error:', msg);
 
-      // Обрабатываем ожидание из-за частых запросов
       const flood = /FLOOD_WAIT_(\d+)/.exec(msg);
       if (flood) {
         const waitSeconds = parseInt(flood[1], 10);
@@ -160,57 +178,15 @@ async function sendCode(account: any) {
         };
       }
 
-      if (
-        msg.includes('PHONE_NUMBER_INVALID') ||
-        msg.toLowerCase().includes('invalid phone')
-      ) {
+      if (msg.includes('PHONE_NUMBER_INVALID')) {
         return { error: 'Неверный номер телефона' };
       }
 
-      // Наше "управляющее" исключение — код был запрошен и отправлен
-      if (msg.includes('CODE_REQUESTED')) {
-        // Сохраняем в базе, что начинаем процесс авторизации и код отправлен
-        await supabase
-          .from('telegram_accounts')
-          .update({
-            status: 'waiting',
-            last_auth_attempt: new Date().toISOString(),
-            session_data: JSON.stringify({
-              step: 'code_requested',
-              phone: account.phone_number,
-              timestamp: Date.now()
-            })
-          })
-          .eq('id', account.id);
-
-        // Логируем активность
-        await supabase.from('activities').insert([{
-          user_id: account.user_id,
-          type: 'auth_code_sent',
-          description: `Код для авторизации отправлен на ${account.phone_number}`
-        }]);
-
-        return {
-          success: true,
-          message: `Код отправлен на номер ${account.phone_number}. Введите SMS код.`,
-          nextStep: 'verify_code'
-        };
-      }
-
-      // Неожиданная ошибка — пробрасываем дальше
       throw startError;
     }
-
-    // На всякий случай, если не попали ни в один из кейсов
-    return {
-      error: 'Не удалось инициировать отправку кода'
-    };
-
   } catch (error) {
     console.error('Error in sendCode:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
-
-    // Обрабатываем ограничение FLOOD_WAIT как ожидаемую ситуацию (200 OK)
     const flood = /FLOOD_WAIT_(\d+)/.exec(errorMessage);
     if (flood) {
       const waitSeconds = parseInt(flood[1], 10);
@@ -220,10 +196,7 @@ async function sendCode(account: any) {
         message: `Слишком много попыток. Подождите ${Math.ceil(waitSeconds / 60)} мин. и попробуйте снова.`
       };
     }
-
-    return {
-      error: 'Не удалось инициировать авторизацию: ' + errorMessage
-    };
+    return { error: 'Не удалось инициировать авторизацию: ' + errorMessage };
   }
 }
 
@@ -247,7 +220,7 @@ async function verifyCode(account: any, phoneCode: string) {
       };
     }
 
-    if (sessionData.step !== 'code_requested') {
+    if (sessionData.step !== 'code_sent' || !sessionData.phone_code_hash) {
       return {
         error: 'Неверное состояние авторизации. Сначала запросите код.'
       };
@@ -258,15 +231,12 @@ async function verifyCode(account: any, phoneCode: string) {
     await client.connect();
 
     try {
-      // Завершаем процесс авторизации с введенным кодом
-      // Используем подход с прямой авторизацией, не вызывая start() заново
-      await client.start({
-        phone: () => account.phone_number,
-        code: () => phoneCode,
-        password: () => {
-          // Если нужен пароль 2FA, остановимся здесь
-          throw new Error('2FA_REQUIRED');
-        }
+      // Авторизуемся напрямую без повторной отправки SMS
+      const signIn: any = await client.invoke({
+        _: 'auth.signIn',
+        phone_number: account.phone_number,
+        phone_code_hash: sessionData.phone_code_hash,
+        phone_code: phoneCode,
       });
 
       // Проверяем успешность авторизации
@@ -304,8 +274,11 @@ async function verifyCode(account: any, phoneCode: string) {
       const errorMessage = authError instanceof Error ? authError.message : String(authError);
       console.log('Auth error:', errorMessage);
       
-      if (errorMessage.includes('2FA_REQUIRED') || errorMessage.includes('password')) {
-        // Сохраняем состояние для 2FA (код уже принят)
+      if (
+        errorMessage.includes('SESSION_PASSWORD_NEEDED') ||
+        errorMessage.toLowerCase().includes('password')
+      ) {
+        // Требуется 2FA — сохраняем состояние
         await supabase
           .from('telegram_accounts')
           .update({ 
@@ -313,6 +286,7 @@ async function verifyCode(account: any, phoneCode: string) {
               step: 'awaiting_2fa',
               phone: account.phone_number,
               code: phoneCode,
+              phone_code_hash: sessionData.phone_code_hash,
               timestamp: Date.now()
             })
           })
@@ -337,9 +311,13 @@ async function verifyCode(account: any, phoneCode: string) {
       }
 
       // Проверяем на неверный код
-      if (errorMessage.includes('PHONE_CODE_INVALID') || errorMessage.includes('invalid')) {
+      if (
+        errorMessage.includes('PHONE_CODE_INVALID') ||
+        errorMessage.includes('PHONE_CODE_EXPIRED') ||
+        errorMessage.toLowerCase().includes('invalid')
+      ) {
         return {
-          error: 'Неверный SMS код. Проверьте код и попробуйте снова.'
+          error: 'Неверный или просроченный SMS код. Проверьте код и попробуйте снова.'
         };
       }
       
