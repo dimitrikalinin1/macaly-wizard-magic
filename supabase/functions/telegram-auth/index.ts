@@ -41,7 +41,7 @@ serve(async (req) => {
     if (!account.api_id || !account.api_hash) {
       return new Response(
         JSON.stringify({ error: 'API ID и API Hash не заданы для аккаунта' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -62,14 +62,14 @@ serve(async (req) => {
       default:
         return new Response(
           JSON.stringify({ error: 'Неизвестное действие' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
 
-    const status = result && result.error && result.error !== 'FLOOD_WAIT' ? 400 : 200;
+    // Всегда отправляем код 200, чтобы Supabase-клиент передал тело в поле data
     return new Response(
       JSON.stringify(result),
-      { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
